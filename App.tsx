@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { GoogleGenAI } from "@google/genai";
-import { GameState, GrowthStage } from './types';
-import { INITIAL_STATS, MENU_ACTIONS, STAGE_THRESHOLDS } from './constants';
+import { GameState, GrowthStage, EnvironmentType } from './types';
+import { INITIAL_STATS, MENU_ACTIONS, STAGE_THRESHOLDS, ENVIRONMENTS } from './constants';
 import PenguinCharacter from './components/PenguinCharacter';
 import StatsBar from './components/StatsBar';
 
@@ -26,6 +26,7 @@ const App: React.FC = () => {
 
         return {
           ...parsed,
+          environment: parsed.environment || 'HOME',
           stats: {
             ...parsed.stats,
             hunger: Math.max(0, parsed.stats.hunger - (hours * 12)),
@@ -43,6 +44,7 @@ const App: React.FC = () => {
       stats: INITIAL_STATS,
       name: "TINGO",
       stage: 'EGG',
+      environment: 'HOME',
       isSleeping: false,
       isSick: false,
       poopCount: 0,
@@ -56,11 +58,14 @@ const App: React.FC = () => {
     petting: false,
     feeding: false,
     bathing: false,
-    playing: false
+    playingBall: false,
+    playingCar: false,
+    playingPlush: false
   });
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [particles, setParticles] = useState<Particle[]>([]);
+  const [showMap, setShowMap] = useState(false);
   
   const audioCtxRef = useRef<AudioContext | null>(null);
   const lastInteractionTime = useRef(0);
@@ -82,7 +87,7 @@ const App: React.FC = () => {
     }, 1000);
   };
 
-  const playSound = (type: 'POP' | 'YUM' | 'JOY' | 'ZZZ' | 'SCRUB') => {
+  const playSound = (type: 'POP' | 'YUM' | 'JOY' | 'ZZZ' | 'SCRUB' | 'WAVE' | 'VROOM') => {
     try {
       if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
       const ctx = audioCtxRef.current;
@@ -99,6 +104,13 @@ const App: React.FC = () => {
           gain.gain.setValueAtTime(0.1, now);
           gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
           osc.start(); osc.stop(now + 0.1);
+          break;
+        case 'VROOM':
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(100, now);
+          osc.frequency.exponentialRampToValueAtTime(300, now + 0.5);
+          gain.gain.setValueAtTime(0.05, now);
+          osc.start(); osc.stop(now + 0.5);
           break;
         case 'YUM':
           osc.type = 'triangle';
@@ -128,22 +140,59 @@ const App: React.FC = () => {
           gain.gain.linearRampToValueAtTime(0, now + 1);
           osc.start(); osc.stop(now + 1);
           break;
+        case 'WAVE':
+          osc.frequency.setValueAtTime(300, now);
+          osc.frequency.exponentialRampToValueAtTime(150, now + 0.5);
+          gain.gain.setValueAtTime(0.05, now);
+          osc.start(); osc.stop(now + 0.5);
+          break;
       }
     } catch (e) { console.warn("Audio Context error", e); }
   };
 
-  const updateThoughts = useCallback(async (state: GameState) => {
+  const resetGame = () => {
+    playSound('JOY');
+    const newState: GameState = { 
+      stats: INITIAL_STATS, 
+      name: "TINGO", 
+      stage: 'EGG', 
+      environment: 'HOME',
+      isSleeping: false, 
+      isSick: false, 
+      poopCount: 0, 
+      lastUpdate: Date.now(), 
+      selectedActionIndex: 0 
+    };
+    setGameState(newState);
+    localStorage.setItem('tingo_modern_save', JSON.stringify(newState));
+    setMessage("UM NOVO COMEÇO! ❤️");
+    setParticles([]);
+    setShowMap(false);
+  };
+
+  const updateThoughts = useCallback(async (state: GameState, specialContext?: string) => {
     if (state.stage === 'DEAD' || state.isSleeping) return;
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Você é um pinguim fofo chamado Tingo. Fome: ${Math.floor(state.stats.hunger)}%, Felicidade: ${Math.floor(state.stats.happiness)}%. Escreva uma frase curta (máx 6 palavras) expressando como você se sente agora.`;
+      let contextPrompt = `Você é um pinguim fofo chamado Tingo. Você está no ambiente ${ENVIRONMENTS[state.environment].name}. Fome: ${Math.floor(state.stats.hunger)}%, Felicidade: ${Math.floor(state.stats.happiness)}%.`;
+      
+      if (specialContext === 'PETTING') {
+        contextPrompt += " Alguém acabou de te fazer carinho e você está muito feliz e dengoso.";
+      } else if (specialContext === 'CAR') {
+        contextPrompt += " Você está brincando de corrida com um carrinho super rápido!";
+      } else if (specialContext === 'PLUSH') {
+        contextPrompt += " Você está abraçando uma pelúcia macia.";
+      }
+
+      contextPrompt += " Escreva uma frase curta (máx 6 palavras) expressando como você se sente agora.";
+
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: prompt
+        contents: contextPrompt
       });
       setMessage(response.text?.trim() || "PIU! ❤️");
     } catch {
-      setMessage("ESTOU MUITO FELIZ! ❤️");
+      setMessage(specialContext === 'PETTING' ? "AMO SEU CARINHO! ❤️" : "ESTOU MUITO FELIZ! ❤️");
     }
   }, []);
 
@@ -152,21 +201,34 @@ const App: React.FC = () => {
       setGameState(prev => {
         if (prev.stage === 'DEAD') return prev;
         const newStats = { ...prev.stats };
+        
         if (!prev.isSleeping) {
           newStats.hunger = Math.max(0, newStats.hunger - 0.4);
           newStats.happiness = Math.max(0, newStats.happiness - 0.2);
+          const hygieneDrain = prev.environment === 'LIBRARY' ? 0.1 : 0.2;
+          newStats.hygiene = Math.max(0, newStats.hygiene - hygieneDrain);
           newStats.energy = Math.max(0, newStats.energy - 0.1);
         } else {
-          newStats.energy = Math.min(100, newStats.energy + 1.5);
+          const energyGain = prev.environment === 'HOME' ? 1.8 : 1.5;
+          newStats.energy = Math.min(100, newStats.energy + energyGain);
         }
-        newStats.age += 0.001;
+        
+        const growthRate = prev.environment === 'SCHOOL' ? 0.0026 : 0.002;
+        newStats.age += growthRate;
+        
         let newStage: GrowthStage = prev.stage;
-        if (newStats.age >= STAGE_THRESHOLDS.ADULT) newStage = 'ADULT';
+        if (newStats.age >= STAGE_THRESHOLDS.SENIOR) newStage = 'SENIOR';
+        else if (newStats.age >= STAGE_THRESHOLDS.ADULT) newStage = 'ADULT';
         else if (newStats.age >= STAGE_THRESHOLDS.CHILD) newStage = 'CHILD';
         else if (newStats.age >= STAGE_THRESHOLDS.BABY && prev.stage === 'EGG') newStage = 'BABY';
-        if (newStats.hunger <= 5 || newStats.health <= 5) {
-           if (Math.random() > 0.995) newStage = 'DEAD';
+
+        const criticalStat = newStats.hunger <= 10 || newStats.health <= 10 || newStats.happiness <= 5;
+        const reachedEnd = newStats.age >= STAGE_THRESHOLDS.MAX_AGE;
+        
+        if (reachedEnd || (criticalStat && Math.random() > 0.99)) {
+           newStage = 'DEAD';
         }
+
         const newState = { ...prev, stats: newStats, stage: newStage, lastUpdate: Date.now() };
         localStorage.setItem('tingo_modern_save', JSON.stringify(newState));
         return newState;
@@ -175,15 +237,15 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  const changeEnvironment = (envType: EnvironmentType) => {
+    playSound('WAVE');
+    setGameState(prev => ({ ...prev, environment: envType }));
+    setShowMap(false);
+    setMessage(`ESTAMOS NO(A) ${ENVIRONMENTS[envType].name}!`);
+  };
+
   const handleAction = (id: string, x?: number, y?: number) => {
-    if (gameState.stage === 'DEAD') {
-      if (id === 'STATS' && window.confirm("Reiniciar o jogo?")) {
-        setGameState({ stats: INITIAL_STATS, name: "TINGO", stage: 'EGG', isSleeping: false, isSick: false, poopCount: 0, lastUpdate: Date.now(), selectedActionIndex: 0 });
-        setMessage("BEM-VINDO DE VOLTA!");
-        setParticles([]);
-      }
-      return;
-    }
+    if (gameState.stage === 'DEAD') return;
 
     playSound('POP');
     const px = x || window.innerWidth / 2;
@@ -213,16 +275,49 @@ const App: React.FC = () => {
           return next;
         });
         break;
-      case 'PLAY':
+      case 'BALL':
         if (!gameState.isSleeping) {
-          setIsInteracting(p => ({ ...p, playing: true }));
+          setIsInteracting(p => ({ ...p, playingBall: true }));
           playSound('JOY');
-          addParticles(px, py, '⭐', 5);
+          addParticles(px, py, '⚽', 5);
           setGameState(prev => {
-            const next = { ...prev, stats: { ...prev.stats, happiness: Math.min(100, prev.stats.happiness + 20), energy: Math.max(0, prev.stats.energy - 10) } };
+            const hapGain = prev.environment === 'PARK' ? 40 : 20;
+            const next = { ...prev, stats: { ...prev.stats, happiness: Math.min(100, prev.stats.happiness + hapGain), energy: Math.max(0, prev.stats.energy - 10) } };
             setTimeout(() => {
-               setIsInteracting(p => ({ ...p, playing: false }));
+               setIsInteracting(p => ({ ...p, playingBall: false }));
                updateThoughts(next);
+            }, 2500);
+            return next;
+          });
+        }
+        break;
+      case 'CAR':
+        if (!gameState.isSleeping) {
+          setIsInteracting(p => ({ ...p, playingCar: true }));
+          playSound('VROOM');
+          addParticles(px, py, '🏎️', 4);
+          setGameState(prev => {
+            const hapGain = prev.environment === 'PARK' ? 35 : 15;
+            const next = { ...prev, stats: { ...prev.stats, happiness: Math.min(100, prev.stats.happiness + hapGain), energy: Math.max(0, prev.stats.energy - 15) } };
+            setTimeout(() => {
+               setIsInteracting(p => ({ ...p, playingCar: false }));
+               updateThoughts(next, 'CAR');
+            }, 3000);
+            return next;
+          });
+        }
+        break;
+      case 'PLUSH':
+        if (!gameState.isSleeping) {
+          setIsInteracting(p => ({ ...p, playingPlush: true }));
+          playSound('JOY');
+          addParticles(px, py, '🧸', 6);
+          setGameState(prev => {
+            const hapGain = prev.environment === 'HOME' ? 40 : 25;
+            const next = { ...prev, stats: { ...prev.stats, happiness: Math.min(100, prev.stats.happiness + hapGain) } };
+            setTimeout(() => {
+               setIsInteracting(p => ({ ...p, playingPlush: false }));
+               updateThoughts(next, 'PLUSH');
             }, 2500);
             return next;
           });
@@ -246,6 +341,16 @@ const App: React.FC = () => {
           return next;
         });
         break;
+      case 'TRAVEL':
+        setShowMap(!showMap);
+        break;
+      case 'STATS':
+        const s = gameState.stats;
+        const years = Math.floor(s.age);
+        const months = Math.floor((s.age % 1) * 12);
+        const ageStr = years > 0 ? `${years} ANOS E ${months} MESES` : `${months} MESES`;
+        setMessage(`ATINGI ${ageStr}! NÍVEL ${Math.floor(s.age * 5) + 1}`);
+        break;
     }
   };
 
@@ -258,7 +363,13 @@ const App: React.FC = () => {
       setIsInteracting(p => ({ ...p, petting: true }));
       addParticles(x, y, '❤️', 3);
       playSound('JOY');
-      setGameState(prev => ({ ...prev, stats: { ...prev.stats, happiness: Math.min(100, prev.stats.happiness + 3) } }));
+      
+      setGameState(prev => {
+        const next = { ...prev, stats: { ...prev.stats, happiness: Math.min(100, prev.stats.happiness + 3) } };
+        updateThoughts(next, 'PETTING');
+        return next;
+      });
+
       lastInteractionTime.current = now;
       setTimeout(() => setIsInteracting(p => ({ ...p, petting: false })), 600);
     }
@@ -287,8 +398,70 @@ const App: React.FC = () => {
     }
   };
 
+  const currentEnv = ENVIRONMENTS[gameState.environment];
+
+  const renderEnvironmentDetails = () => {
+    switch (gameState.environment) {
+      case 'HOME':
+        return (
+          <>
+            <div className="absolute top-10 left-1/2 -translate-x-1/2 w-28 h-20 bg-blue-100 rounded-lg border-4 border-orange-200 overflow-hidden shadow-inner flex items-center justify-center">
+               <div className="text-2xl">{gameState.isSleeping ? '🌙' : '☀️'}</div>
+            </div>
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-48 h-4 bg-orange-200/50 rounded-full blur-sm"></div>
+            <div className="absolute top-12 left-8 text-2xl opacity-40">🖼️</div>
+            <div className="absolute bottom-12 right-10 text-2xl opacity-40">🪴</div>
+          </>
+        );
+      case 'SCHOOL':
+        return (
+          <>
+            <div className="absolute top-8 left-1/2 -translate-x-1/2 w-52 h-24 bg-emerald-900 border-x-8 border-y-4 border-amber-800 rounded shadow-lg flex items-center justify-center">
+               <div className="text-white/40 font-mono text-xs text-center select-none">2 + 2 = 🐧<br/>A B C D E</div>
+            </div>
+            <div className="absolute bottom-10 left-10 text-2xl opacity-40">🎒</div>
+            <div className="absolute top-12 left-6 text-xl opacity-40">📐</div>
+            <div className="absolute top-12 right-6 text-xl opacity-40">🍎</div>
+          </>
+        );
+      case 'LIBRARY':
+        return (
+          <>
+            <div className="absolute top-0 left-0 w-full h-full opacity-10 flex flex-col gap-2 p-4">
+              <div className="h-4 bg-indigo-900 rounded"></div>
+              <div className="h-4 bg-indigo-900 rounded"></div>
+              <div className="h-4 bg-indigo-900 rounded"></div>
+            </div>
+            <div className="absolute top-12 right-12 w-8 h-8 flex flex-col items-center">
+               <div className="w-2 h-4 bg-amber-100 rounded-t-full candle-flicker"></div>
+               <div className="w-4 h-6 bg-slate-200 rounded"></div>
+            </div>
+            <div className="absolute bottom-12 left-10 text-2xl opacity-50">📚</div>
+            <div className="absolute top-24 left-16 text-xl opacity-30">📜</div>
+          </>
+        );
+      case 'PARK':
+        return (
+          <>
+            <div className="absolute top-6 left-[-100px] text-4xl cloud-animate">☁️</div>
+            <div className="absolute top-12 left-[-150px] text-3xl cloud-animate" style={{animationDelay: '5s'}}>☁️</div>
+            <div className="absolute bottom-6 left-10 text-2xl grass-sway">🌱</div>
+            <div className="absolute bottom-6 right-10 text-2xl grass-sway" style={{animationDelay: '1s'}}>🌱</div>
+            <div className="absolute top-20 right-10 text-3xl opacity-40">⛲</div>
+            <div className="absolute bottom-12 left-1/2 -translate-x-1/2 text-2xl opacity-20">🦋</div>
+          </>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const currentLevel = Math.floor(gameState.stats.age * 5) + 1;
+  const levelProgress = (gameState.stats.age % 0.2) / 0.2 * 100;
+  const ageYears = Math.floor(gameState.stats.age);
+
   return (
-    <div className="modern-device select-none" onMouseMove={onMouseMove} onMouseUp={onMouseUp}>
+    <div className={`modern-device select-none transition-colors duration-1000 ${currentEnv.color}`} onMouseMove={onMouseMove} onMouseUp={onMouseUp}>
       {/* Particles Layer */}
       {particles.map(p => (
         <div key={p.id} className="particle text-2xl" style={{ left: p.x - 12, top: p.y - 12 }}>
@@ -296,9 +469,35 @@ const App: React.FC = () => {
         </div>
       ))}
 
+      {/* Map Overlay */}
+      {showMap && (
+        <div className="absolute inset-0 z-[100] bg-white/80 backdrop-blur-md p-8 flex flex-col items-center justify-center animate-in fade-in zoom-in duration-300">
+           <h2 className="text-2xl font-black mb-8 text-slate-800">PARA ONDE VAMOS?</h2>
+           <div className="grid grid-cols-2 gap-4 w-full">
+             {Object.entries(ENVIRONMENTS).map(([key, env]) => (
+               <button 
+                key={key}
+                onClick={() => changeEnvironment(key as EnvironmentType)}
+                className={`p-4 rounded-2xl flex flex-col items-center gap-2 border-2 transition-all ${gameState.environment === key ? 'border-blue-500 bg-blue-50' : 'border-transparent bg-white shadow-sm hover:scale-105'}`}
+               >
+                 <span className="text-3xl">
+                   {key === 'HOME' && '🏠'}
+                   {key === 'LIBRARY' && '📚'}
+                   {key === 'SCHOOL' && '🏫'}
+                   {key === 'PARK' && '🌳'}
+                 </span>
+                 <span className="font-bold text-xs">{env.name}</span>
+                 <span className="text-[10px] text-slate-400 text-center leading-tight">{env.bonus}</span>
+               </button>
+             ))}
+           </div>
+           <button onClick={() => setShowMap(false)} className="mt-10 font-bold text-slate-400 hover:text-slate-600">VOLTAR</button>
+        </div>
+      )}
+
       {/* Dragging Preview */}
       {draggedItem && (
-        <div className="fixed z-[100] text-5xl pointer-events-none drop-shadow-2xl animate-wobble" 
+        <div className="fixed z-[120] text-5xl pointer-events-none drop-shadow-2xl animate-wobble" 
              style={{ left: mousePos.x - 24, top: mousePos.y - 24 }}>
           {MENU_ACTIONS.find(a => a.id === draggedItem)?.icon}
         </div>
@@ -311,6 +510,20 @@ const App: React.FC = () => {
            <StatsBar label="Saúde" value={gameState.stats.health} icon="💉" color="bg-green-400" />
         </div>
 
+        {/* Level & Age Persistant Bar */}
+        <div className="mx-4 mb-4 bg-white/80 backdrop-blur-xl rounded-2xl p-3 border border-white/50 shadow-sm flex flex-col gap-1">
+          <div className="flex justify-between items-center px-1">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">NÍVEL {currentLevel}</span>
+            <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">{ageYears} ANOS</span>
+          </div>
+          <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-indigo-500 transition-all duration-1000"
+              style={{ width: `${levelProgress}%` }}
+            />
+          </div>
+        </div>
+
         {/* Message Bubble */}
         <div className="z-20 bg-white/95 backdrop-blur shadow-lg rounded-2xl p-4 text-center mx-4 mb-4 font-bold text-slate-800 relative transition-all duration-300">
           {gameState.stage === 'DEAD' ? "TINGO VIROU UMA ESTRELA 🌟" : message}
@@ -318,50 +531,72 @@ const App: React.FC = () => {
         </div>
 
         {/* Interaction Area */}
-        <div id="pet-area" className="flex-1 flex flex-col items-center justify-center relative cursor-pointer" onMouseDown={handlePetting}>
-          <div className="habitat z-0"></div>
+        <div id="pet-area" className="flex-1 flex flex-col items-center justify-center relative cursor-pointer overflow-visible" onMouseDown={handlePetting}>
+          <div className={`habitat z-0 transition-colors duration-1000 ${currentEnv.secondary}`}>
+            {renderEnvironmentDetails()}
+          </div>
           
           <div className="z-10 w-full flex justify-center">
             <PenguinCharacter 
               stage={gameState.stage}
               isSleeping={gameState.isSleeping}
               isEating={isInteracting.feeding}
-              isPlaying={isInteracting.playing}
+              isPlaying={isInteracting.playingBall || isInteracting.playingCar || isInteracting.playingPlush}
               isBathing={isInteracting.bathing}
-              isPetting={isInteracting.petting}
+              isPetting={isInteracting.petting || isInteracting.playingPlush}
               age={gameState.stats.age}
               accessories={{hat: null, glasses: null, clothing: null}}
               isHoveredByItem={!!draggedItem}
             />
           </div>
 
-          {/* Visual Extras */}
+          {/* Reset Button Overlay when dead */}
+          {gameState.stage === 'DEAD' && (
+            <button 
+              onClick={resetGame}
+              className="absolute top-2/3 left-1/2 -translate-x-1/2 z-[60] bg-indigo-500 hover:bg-indigo-600 active:scale-95 text-white font-bold px-8 py-3 rounded-2xl shadow-[0_8px_20px_rgba(99,102,241,0.4)] transition-all animate-pulse flex items-center gap-2"
+            >
+              <span>✨</span> RECOMEÇAR JORNADA
+            </button>
+          )}
+
+          {/* Visual Extras - Toys Animation */}
+          {isInteracting.playingBall && (
+            <div className="absolute top-1/2 right-10 text-5xl animate-bounce z-30">⚽</div>
+          )}
+          {isInteracting.playingCar && (
+            <div className="absolute bottom-40 w-full flex justify-center overflow-hidden z-30">
+               <div className="text-5xl animate-[float-cloud_2s_linear_infinite] whitespace-nowrap">🏎️ 💨💨</div>
+            </div>
+          )}
+          {isInteracting.playingPlush && (
+            <div className="absolute top-1/2 right-1/2 translate-x-16 -translate-y-8 text-5xl animate-bounce z-30">🧸</div>
+          )}
+          {isInteracting.feeding && (
+            <div className="absolute top-1/2 left-10 text-5xl animate-bounce z-30">🐟</div>
+          )}
+
+          {/* Visual Status Extras */}
           {gameState.poopCount > 0 && (
             <div className="absolute bottom-36 right-12 text-4xl animate-bounce z-20 filter drop-shadow-md">💩</div>
           )}
           {gameState.isSick && (
             <div className="absolute top-1/2 left-12 text-4xl animate-pulse z-20 filter drop-shadow-md">🤒</div>
           )}
-          {isInteracting.playing && (
-            <div className="absolute top-1/2 right-10 text-5xl animate-bounce z-30">⚽</div>
-          )}
-          {isInteracting.feeding && (
-            <div className="absolute top-1/2 left-10 text-5xl animate-bounce z-30">🐟</div>
-          )}
         </div>
       </div>
 
       {/* Navigation / Actions Dock */}
-      <div className="action-dock">
+      <div className="action-dock !grid-cols-3 !gap-3 !p-4 !pb-8 !overflow-y-auto !max-h-[300px]">
          {MENU_ACTIONS.map(action => (
            <div 
              key={action.id}
              onMouseDown={(e) => onDragStart(e, action.id)}
              onClick={() => handleAction(action.id)}
-             className={`action-btn ${gameState.stage === 'DEAD' && action.id !== 'STATS' ? 'opacity-20 cursor-not-allowed grayscale' : ''} ${draggedItem === action.id ? 'grabbing-item scale-110 border-blue-400' : ''}`}
+             className={`action-btn !rounded-xl ${gameState.stage === 'DEAD' && action.id !== 'STATS' ? 'opacity-20 cursor-not-allowed grayscale' : ''} ${draggedItem === action.id ? 'grabbing-item scale-110 border-blue-400' : ''}`}
            >
-             <span className="action-icon">{action.icon}</span>
-             <span className="action-label">{action.label}</span>
+             <span className="action-icon !text-xl !mb-1">{action.icon}</span>
+             <span className="action-label !text-[9px]">{action.label}</span>
            </div>
          ))}
       </div>

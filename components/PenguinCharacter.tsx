@@ -57,6 +57,7 @@ const PenguinCharacter: React.FC<PenguinCharacterProps> = ({
       case 'BABY': return 'scale-[0.85]';
       case 'CHILD': return 'scale-[1.1]';
       case 'ADULT': return 'scale-[1.3]';
+      case 'SENIOR': return 'scale-[1.25] opacity-90';
       default: return '';
     }
   };
@@ -74,19 +75,22 @@ const PenguinCharacter: React.FC<PenguinCharacterProps> = ({
 
   const isExcited = isEating || isPlaying || isHoveredByItem;
   const getWiggle = isPetting ? 'animate-wobble' : '';
-  const getBounce = (isExcited || isBathing) ? 'animate-bounce' : 'animate-bounce-slow';
+  const getBounce = (isExcited || isBathing) ? 'animate-bounce' : (stage === 'SENIOR' ? 'animate-bounce-slow opacity-95' : 'animate-bounce-slow');
 
-  // Cores baseadas na imagem
-  const hoodColor = 'bg-slate-300'; // Azul acinzentado claro do capuz
-  const penguinFaceColor = 'bg-slate-500'; // Cinza da parte de cima da cabeça do pinguim
-  const bellyColor = 'bg-white'; // Branco do rosto e barriga
+  // Cores adaptadas para o estágio (Idoso fica mais acinzentado/pálido)
+  const isSenior = stage === 'SENIOR';
+  const hoodColor = isSenior ? 'bg-slate-400' : 'bg-slate-300';
+  const penguinFaceColor = isSenior ? 'bg-slate-600' : 'bg-slate-500';
+  const bellyColor = isSenior ? 'bg-slate-100' : 'bg-white';
+
+  const showHappyEyes = isPetting || isExcited;
 
   return (
     <div ref={containerRef} className={`relative transition-all duration-500 mb-12 ${getStageStyles()} ${getWiggle} ${getBounce}`}>
       {/* Sombra */}
       <div className={`absolute -bottom-6 left-1/2 -translate-x-1/2 w-32 h-6 bg-black/15 rounded-full blur-2xl transition-all duration-500 ${isPetting ? 'scale-125' : 'scale-100'}`}></div>
 
-      {/* Orelhas do Capuz (Bear ears like the photo) */}
+      {/* Orelhas do Capuz */}
       <div className={`absolute -top-2 left-4 w-12 h-12 ${hoodColor} rounded-full border-2 border-slate-400/20 shadow-sm z-0`}></div>
       <div className={`absolute -top-2 right-4 w-12 h-12 ${hoodColor} rounded-full border-2 border-slate-400/20 shadow-sm z-0`}></div>
 
@@ -99,24 +103,41 @@ const PenguinCharacter: React.FC<PenguinCharacterProps> = ({
           {/* Mancha Cinza da Testa (Pico de viúva) */}
           <div className={`absolute top-0 w-28 h-20 ${penguinFaceColor} rounded-[50%_50%_100%_100%/30%_30%_100%_100%] opacity-90`}></div>
 
-          {/* Olhos (Pequenos e pretos como botões) */}
+          {/* Olhos */}
           <div className="absolute top-14 left-1/2 -translate-x-1/2 flex gap-10 z-20">
-            <div className={`w-3.5 h-3.5 bg-slate-900 rounded-full shadow-sm transition-all duration-150 ${isSleeping ? 'h-1 scale-y-50 mt-1.5' : ''}`}
-                 style={{ transform: isSleeping ? '' : `translate(${mousePos.x}px, ${mousePos.y}px)` }}>
-              {!isSleeping && <div className="absolute top-0.5 left-0.5 w-1 h-1 bg-white opacity-40 rounded-full"></div>}
-            </div>
-            <div className={`w-3.5 h-3.5 bg-slate-900 rounded-full shadow-sm transition-all duration-150 ${isSleeping ? 'h-1 scale-y-50 mt-1.5' : ''}`}
-                 style={{ transform: isSleeping ? '' : `translate(${mousePos.x}px, ${mousePos.y}px)` }}>
-              {!isSleeping && <div className="absolute top-0.5 left-0.5 w-1 h-1 bg-white opacity-40 rounded-full"></div>}
-            </div>
+            {showHappyEyes ? (
+              <>
+                <div className="w-4 h-3 border-t-2 border-slate-900 rounded-[50%_50%_0_0] mt-1.5 opacity-80"></div>
+                <div className="w-4 h-3 border-t-2 border-slate-900 rounded-[50%_50%_0_0] mt-1.5 opacity-80"></div>
+              </>
+            ) : (
+              <>
+                <div className={`w-3.5 h-3.5 bg-slate-900 rounded-full shadow-sm transition-all duration-150 ${isSleeping ? 'h-1 scale-y-50 mt-1.5' : ''}`}
+                     style={{ transform: isSleeping ? '' : `translate(${mousePos.x}px, ${mousePos.y}px)` }}>
+                  {!isSleeping && <div className="absolute top-0.5 left-0.5 w-1 h-1 bg-white opacity-40 rounded-full"></div>}
+                </div>
+                <div className={`w-3.5 h-3.5 bg-slate-900 rounded-full shadow-sm transition-all duration-150 ${isSleeping ? 'h-1 scale-y-50 mt-1.5' : ''}`}
+                     style={{ transform: isSleeping ? '' : `translate(${mousePos.x}px, ${mousePos.y}px)` }}>
+                  {!isSleeping && <div className="absolute top-0.5 left-0.5 w-1 h-1 bg-white opacity-40 rounded-full"></div>}
+                </div>
+              </>
+            )}
           </div>
 
-          {/* Bico (Amarelo horizontal) */}
-          <div className={`absolute top-16 left-1/2 -translate-x-1/2 w-7 h-3 bg-yellow-400 rounded-full shadow-sm z-20 transition-all duration-300 ${isEating ? 'scale-150 bg-yellow-500' : ''}`}>
+          {/* Sobrancelhas de Idoso (SENIOR) */}
+          {isSenior && (
+            <div className="absolute top-10 left-1/2 -translate-x-1/2 flex gap-12 z-20 opacity-60">
+               <div className="w-6 h-1 bg-white rounded-full -rotate-12"></div>
+               <div className="w-6 h-1 bg-white rounded-full rotate-12"></div>
+            </div>
+          )}
+
+          {/* Bico */}
+          <div className={`absolute top-16 left-1/2 -translate-x-1/2 w-7 h-3 ${isSenior ? 'bg-yellow-300' : 'bg-yellow-400'} rounded-full shadow-sm z-20 transition-all duration-300 ${isEating ? 'scale-150 bg-yellow-500' : ''}`}>
              <div className="absolute top-1/2 left-0 w-full h-[0.5px] bg-black/5"></div>
           </div>
 
-          {/* Blush (Bochechas rosadas) */}
+          {/* Blush */}
           {(isPetting || isExcited) && (
             <>
               <div className="absolute top-18 left-4 w-6 h-3 bg-pink-300/40 rounded-full blur-sm animate-pulse"></div>
@@ -125,17 +146,17 @@ const PenguinCharacter: React.FC<PenguinCharacterProps> = ({
           )}
         </div>
 
-        {/* Textura de fofura (Reflexo sutil) */}
+        {/* Textura de fofura */}
         <div className="absolute top-4 left-6 w-12 h-6 bg-white/20 rounded-full blur-md"></div>
       </div>
 
-      {/* Nadadeiras (Integradas ao capuz) */}
+      {/* Nadadeiras */}
       <div className={`absolute top-24 -left-6 w-12 h-20 ${hoodColor} rounded-full -rotate-15 origin-top transition-transform duration-500 shadow-md border-r border-slate-400/20 ${isExcited || isPetting || isBathing ? 'rotate-[60deg] -translate-y-2' : ''}`}></div>
       <div className={`absolute top-24 -right-6 w-12 h-20 ${hoodColor} rounded-full rotate-15 origin-top transition-transform duration-500 shadow-md border-l border-slate-400/20 ${isExcited || isPetting || isBathing ? '-rotate-[60deg] -translate-y-2' : ''}`}></div>
 
-      {/* Pés (Pequenos e azulados como na base da pelúcia) */}
-      <div className="absolute -bottom-2 left-8 w-10 h-6 bg-blue-200 rounded-full rotate-12 shadow-sm border-t border-blue-300/30"></div>
-      <div className="absolute -bottom-2 right-8 w-10 h-6 bg-blue-200 rounded-full -rotate-12 shadow-sm border-t border-blue-300/30"></div>
+      {/* Pés */}
+      <div className={`absolute -bottom-2 left-8 w-10 h-6 ${isSenior ? 'bg-slate-300' : 'bg-blue-200'} rounded-full rotate-12 shadow-sm border-t border-blue-300/30`}></div>
+      <div className={`absolute -bottom-2 right-8 w-10 h-6 ${isSenior ? 'bg-slate-300' : 'bg-blue-200'} rounded-full -rotate-12 shadow-sm border-t border-blue-300/30`}></div>
     </div>
   );
 };

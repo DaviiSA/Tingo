@@ -1,5 +1,7 @@
 
-export type GrowthStage = 'EGG' | 'BABY' | 'CHILD' | 'ADULT' | 'DEAD';
+export type GrowthStage = 'EGG' | 'BABY' | 'CHILD' | 'ADULT' | 'SENIOR' | 'DEAD';
+
+export type EnvironmentType = 'HOME' | 'LIBRARY' | 'SCHOOL' | 'PARK';
 
 export interface PetStats {
   hunger: number;
@@ -12,12 +14,13 @@ export interface PetStats {
   careScore: number;
 }
 
-export type ActionType = 'FOOD' | 'LIGHT' | 'PLAY' | 'CLEAN' | 'HEAL' | 'STATS';
+export type ActionType = 'FOOD' | 'LIGHT' | 'PLAY' | 'CLEAN' | 'HEAL' | 'STATS' | 'TRAVEL';
 
 export interface GameState {
   stats: PetStats;
   name: string;
   stage: GrowthStage;
+  environment: EnvironmentType;
   isSleeping: boolean;
   isSick: boolean;
   poopCount: number;
