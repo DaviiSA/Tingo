@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { GoogleGenAI } from "@google/genai";
-import { GameState, GrowthStage, EnvironmentType } from './types';
+import { GameState, GrowthStage, EnvironmentType, ActionScenario } from './types';
 import { INITIAL_STATS, MENU_ACTIONS, STAGE_THRESHOLDS, ENVIRONMENTS } from './constants';
 import PenguinCharacter from './components/PenguinCharacter';
 import StatsBar from './components/StatsBar';
@@ -54,6 +54,7 @@ const App: React.FC = () => {
   });
 
   const [message, setMessage] = useState("OLÁ, SOU O TINGO!");
+  const [activeScenario, setActiveScenario] = useState<ActionScenario>(null);
   const [isInteracting, setIsInteracting] = useState({
     petting: false,
     feeding: false,
@@ -254,6 +255,7 @@ const App: React.FC = () => {
     switch (id) {
       case 'FOOD':
         if (!gameState.isSleeping) {
+          setActiveScenario('KITCHEN');
           setIsInteracting(p => ({ ...p, feeding: true }));
           playSound('YUM');
           addParticles(px, py, '🐟', 3);
@@ -261,83 +263,93 @@ const App: React.FC = () => {
             const next = { ...prev, stats: { ...prev.stats, hunger: Math.min(100, prev.stats.hunger + 25) } };
             setTimeout(() => {
                setIsInteracting(p => ({ ...p, feeding: false }));
+               setActiveScenario(null);
                updateThoughts(next);
-            }, 2000);
-            return next;
-          });
-        }
-        break;
-      case 'LIGHT':
-        setGameState(prev => {
-          const next = { ...prev, isSleeping: !prev.isSleeping };
-          setMessage(next.isSleeping ? "BONS SONHOS... Zzz" : "BOM DIA, AMIGO!");
-          if (next.isSleeping) playSound('ZZZ');
-          return next;
-        });
-        break;
-      case 'BALL':
-        if (!gameState.isSleeping) {
-          setIsInteracting(p => ({ ...p, playingBall: true }));
-          playSound('JOY');
-          addParticles(px, py, '⚽', 5);
-          setGameState(prev => {
-            const hapGain = prev.environment === 'PARK' ? 40 : 20;
-            const next = { ...prev, stats: { ...prev.stats, happiness: Math.min(100, prev.stats.happiness + hapGain), energy: Math.max(0, prev.stats.energy - 10) } };
-            setTimeout(() => {
-               setIsInteracting(p => ({ ...p, playingBall: false }));
-               updateThoughts(next);
-            }, 2500);
-            return next;
-          });
-        }
-        break;
-      case 'CAR':
-        if (!gameState.isSleeping) {
-          setIsInteracting(p => ({ ...p, playingCar: true }));
-          playSound('VROOM');
-          addParticles(px, py, '🏎️', 4);
-          setGameState(prev => {
-            const hapGain = prev.environment === 'PARK' ? 35 : 15;
-            const next = { ...prev, stats: { ...prev.stats, happiness: Math.min(100, prev.stats.happiness + hapGain), energy: Math.max(0, prev.stats.energy - 15) } };
-            setTimeout(() => {
-               setIsInteracting(p => ({ ...p, playingCar: false }));
-               updateThoughts(next, 'CAR');
             }, 3000);
             return next;
           });
         }
         break;
+      case 'LIGHT':
+        setActiveScenario('BEDROOM');
+        setGameState(prev => {
+          const next = { ...prev, isSleeping: !prev.isSleeping };
+          setMessage(next.isSleeping ? "BONS SONHOS... Zzz" : "BOM DIA, AMIGO!");
+          if (next.isSleeping) playSound('ZZZ');
+          if (!next.isSleeping) {
+             setTimeout(() => setActiveScenario(null), 2000);
+          }
+          return next;
+        });
+        break;
+      case 'BALL':
+      case 'CAR':
       case 'PLUSH':
         if (!gameState.isSleeping) {
-          setIsInteracting(p => ({ ...p, playingPlush: true }));
-          playSound('JOY');
-          addParticles(px, py, '🧸', 6);
+          setActiveScenario('PLAYROOM');
+          const isBall = id === 'BALL';
+          const isCar = id === 'CAR';
+          const isPlush = id === 'PLUSH';
+          
+          setIsInteracting(p => ({ 
+            ...p, 
+            playingBall: isBall, 
+            playingCar: isCar, 
+            playingPlush: isPlush 
+          }));
+
+          if (isCar) playSound('VROOM');
+          else playSound('JOY');
+
+          const icon = isBall ? '⚽' : isCar ? '🏎️' : '🧸';
+          addParticles(px, py, icon, 5);
+
           setGameState(prev => {
-            const hapGain = prev.environment === 'HOME' ? 40 : 25;
-            const next = { ...prev, stats: { ...prev.stats, happiness: Math.min(100, prev.stats.happiness + hapGain) } };
+            const hapGain = prev.environment === 'PARK' ? 40 : 20;
+            const energyLoss = isCar ? 15 : 10;
+            const next = { 
+              ...prev, 
+              stats: { 
+                ...prev.stats, 
+                happiness: Math.min(100, prev.stats.happiness + hapGain), 
+                energy: Math.max(0, prev.stats.energy - energyLoss) 
+              } 
+            };
             setTimeout(() => {
-               setIsInteracting(p => ({ ...p, playingPlush: false }));
-               updateThoughts(next, 'PLUSH');
-            }, 2500);
+               setIsInteracting(p => ({ 
+                 ...p, 
+                 playingBall: false, 
+                 playingCar: false, 
+                 playingPlush: false 
+               }));
+               setActiveScenario(null);
+               updateThoughts(next, id === 'CAR' ? 'CAR' : id === 'PLUSH' ? 'PLUSH' : undefined);
+            }, 3000);
             return next;
           });
         }
         break;
       case 'CLEAN':
+        setActiveScenario('BATHROOM');
         setIsInteracting(p => ({ ...p, bathing: true }));
         playSound('SCRUB');
         addParticles(px, py, '🫧', 8);
         setGameState(prev => {
           const next = { ...prev, poopCount: 0, stats: { ...prev.stats, hygiene: 100 } };
-          setTimeout(() => setIsInteracting(p => ({ ...p, bathing: false })), 2000);
+          setTimeout(() => {
+            setIsInteracting(p => ({ ...p, bathing: false }));
+            setActiveScenario(null);
+          }, 2500);
           return next;
         });
         break;
       case 'HEAL':
+        setActiveScenario('CLINIC');
         setGameState(prev => {
           const next = { ...prev, isSick: false, stats: { ...prev.stats, health: 100 } };
           addParticles(px, py, '💊', 4);
           setMessage("ESTOU ME SENTINDO ÓTIMO!");
+          setTimeout(() => setActiveScenario(null), 3000);
           return next;
         });
         break;
@@ -345,11 +357,13 @@ const App: React.FC = () => {
         setShowMap(!showMap);
         break;
       case 'STATS':
+        setActiveScenario('LIBRARY');
         const s = gameState.stats;
         const years = Math.floor(s.age);
         const months = Math.floor((s.age % 1) * 12);
         const ageStr = years > 0 ? `${years} ANOS E ${months} MESES` : `${months} MESES`;
         setMessage(`ATINGI ${ageStr}! NÍVEL ${Math.floor(s.age * 5) + 1}`);
+        setTimeout(() => setActiveScenario(null), 3000);
         break;
     }
   };
@@ -398,15 +412,86 @@ const App: React.FC = () => {
     }
   };
 
-  const currentEnv = ENVIRONMENTS[gameState.environment];
+  const renderScenarioDetails = (scenario: ActionScenario) => {
+    switch(scenario) {
+      case 'KITCHEN':
+        return (
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <div className="absolute inset-0 bg-orange-50/80 backdrop-blur-sm z-[-1]"></div>
+            <div className="grid grid-cols-4 gap-2 opacity-10 absolute inset-0">
+               {Array(16).fill(0).map((_, i) => <div key={i} className="w-full h-full border border-orange-200"></div>)}
+            </div>
+            <div className="absolute top-10 right-10 text-6xl opacity-40">🧊</div>
+            <div className="absolute top-10 left-10 text-6xl opacity-40">🍳</div>
+          </div>
+        );
+      case 'BATHROOM':
+        return (
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <div className="absolute inset-0 bg-sky-50/80 backdrop-blur-sm z-[-1]"></div>
+            <div className="absolute top-8 left-8 text-5xl opacity-40 animate-pulse">🚿</div>
+            <div className="absolute top-12 right-12 text-5xl opacity-40 animate-bounce">🧼</div>
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+               <div className="absolute top-1/4 left-1/3 text-2xl animate-bounce opacity-20">🫧</div>
+               <div className="absolute top-2/3 right-1/4 text-3xl animate-bounce opacity-20" style={{animationDelay: '1s'}}>🫧</div>
+            </div>
+          </div>
+        );
+      case 'BEDROOM':
+        return (
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <div className={`absolute inset-0 ${gameState.isSleeping ? 'bg-indigo-950/80' : 'bg-indigo-50/80'} backdrop-blur-sm z-[-1] transition-colors duration-1000`}></div>
+            <div className="absolute top-10 right-10 text-5xl animate-pulse">
+               {gameState.isSleeping ? '🌙' : '⭐'}
+            </div>
+            <div className="absolute bottom-24 left-1/2 -translate-x-1/2 w-72 h-32 bg-slate-200/40 rounded-t-[40px] border-t-4 border-slate-300/50"></div>
+          </div>
+        );
+      case 'PLAYROOM':
+        return (
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <div className="absolute inset-0 bg-yellow-50/80 backdrop-blur-sm z-[-1]"></div>
+            <div className="absolute top-10 left-10 text-5xl opacity-40">🧩</div>
+            <div className="absolute top-12 right-12 text-5xl opacity-40 rotate-12">🎨</div>
+            <div className="absolute bottom-12 left-12 text-4xl opacity-40">🧱</div>
+          </div>
+        );
+      case 'CLINIC':
+        return (
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <div className="absolute inset-0 bg-rose-50/80 backdrop-blur-sm z-[-1]"></div>
+            <div className="absolute top-10 left-1/2 -translate-x-1/2 text-7xl opacity-20 font-black text-rose-500">✚</div>
+            <div className="absolute top-12 left-10 text-5xl opacity-40">🌡️</div>
+          </div>
+        );
+      case 'LIBRARY':
+        return (
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <div className="absolute inset-0 bg-indigo-50/80 backdrop-blur-sm z-[-1]"></div>
+            <div className="absolute top-4 left-4 grid grid-cols-2 gap-2 opacity-30">
+               <div className="w-12 h-16 bg-indigo-900/40 rounded shadow-sm flex items-end p-1"><div className="w-full h-1 bg-white/50"></div></div>
+               <div className="w-12 h-16 bg-indigo-900/40 rounded shadow-sm flex items-end p-1"><div className="w-full h-1 bg-white/50"></div></div>
+            </div>
+            <div className="absolute top-10 right-10 text-6xl opacity-40">📚</div>
+            <div className="absolute bottom-20 left-10 text-5xl opacity-20">📖</div>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
 
   const renderEnvironmentDetails = () => {
+    if (activeScenario || (gameState.isSleeping && !activeScenario)) {
+      return renderScenarioDetails(activeScenario || 'BEDROOM');
+    }
+
     switch (gameState.environment) {
       case 'HOME':
         return (
           <>
             <div className="absolute top-10 left-1/2 -translate-x-1/2 w-28 h-20 bg-blue-100 rounded-lg border-4 border-orange-200 overflow-hidden shadow-inner flex items-center justify-center">
-               <div className="text-2xl">{gameState.isSleeping ? '🌙' : '☀️'}</div>
+               <div className="text-2xl">☀️</div>
             </div>
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-48 h-4 bg-orange-200/50 rounded-full blur-sm"></div>
             <div className="absolute top-12 left-8 text-2xl opacity-40">🖼️</div>
@@ -421,7 +506,6 @@ const App: React.FC = () => {
             </div>
             <div className="absolute bottom-10 left-10 text-2xl opacity-40">🎒</div>
             <div className="absolute top-12 left-6 text-xl opacity-40">📐</div>
-            <div className="absolute top-12 right-6 text-xl opacity-40">🍎</div>
           </>
         );
       case 'LIBRARY':
@@ -430,14 +514,12 @@ const App: React.FC = () => {
             <div className="absolute top-0 left-0 w-full h-full opacity-10 flex flex-col gap-2 p-4">
               <div className="h-4 bg-indigo-900 rounded"></div>
               <div className="h-4 bg-indigo-900 rounded"></div>
-              <div className="h-4 bg-indigo-900 rounded"></div>
             </div>
             <div className="absolute top-12 right-12 w-8 h-8 flex flex-col items-center">
                <div className="w-2 h-4 bg-amber-100 rounded-t-full candle-flicker"></div>
                <div className="w-4 h-6 bg-slate-200 rounded"></div>
             </div>
             <div className="absolute bottom-12 left-10 text-2xl opacity-50">📚</div>
-            <div className="absolute top-24 left-16 text-xl opacity-30">📜</div>
           </>
         );
       case 'PARK':
@@ -448,7 +530,6 @@ const App: React.FC = () => {
             <div className="absolute bottom-6 left-10 text-2xl grass-sway">🌱</div>
             <div className="absolute bottom-6 right-10 text-2xl grass-sway" style={{animationDelay: '1s'}}>🌱</div>
             <div className="absolute top-20 right-10 text-3xl opacity-40">⛲</div>
-            <div className="absolute bottom-12 left-1/2 -translate-x-1/2 text-2xl opacity-20">🦋</div>
           </>
         );
       default:
@@ -459,6 +540,7 @@ const App: React.FC = () => {
   const currentLevel = Math.floor(gameState.stats.age * 5) + 1;
   const levelProgress = (gameState.stats.age % 0.2) / 0.2 * 100;
   const ageYears = Math.floor(gameState.stats.age);
+  const currentEnv = ENVIRONMENTS[gameState.environment];
 
   return (
     <div className={`modern-device select-none transition-colors duration-1000 ${currentEnv.color}`} onMouseMove={onMouseMove} onMouseUp={onMouseUp}>
@@ -472,13 +554,13 @@ const App: React.FC = () => {
       {/* Map Overlay */}
       {showMap && (
         <div className="absolute inset-0 z-[100] bg-white/80 backdrop-blur-md p-8 flex flex-col items-center justify-center animate-in fade-in zoom-in duration-300">
-           <h2 className="text-2xl font-black mb-8 text-slate-800">PARA ONDE VAMOS?</h2>
+           <h2 className="text-2xl font-black mb-8 text-slate-800 uppercase tracking-widest">PARA ONDE VAMOS?</h2>
            <div className="grid grid-cols-2 gap-4 w-full">
              {Object.entries(ENVIRONMENTS).map(([key, env]) => (
                <button 
                 key={key}
                 onClick={() => changeEnvironment(key as EnvironmentType)}
-                className={`p-4 rounded-2xl flex flex-col items-center gap-2 border-2 transition-all ${gameState.environment === key ? 'border-blue-500 bg-blue-50' : 'border-transparent bg-white shadow-sm hover:scale-105'}`}
+                className={`p-4 rounded-2xl flex flex-col items-center gap-2 border-2 transition-all ${gameState.environment === key ? 'border-indigo-500 bg-indigo-50 shadow-md' : 'border-transparent bg-white shadow-sm hover:scale-105'}`}
                >
                  <span className="text-3xl">
                    {key === 'HOME' && '🏠'}
@@ -491,7 +573,7 @@ const App: React.FC = () => {
                </button>
              ))}
            </div>
-           <button onClick={() => setShowMap(false)} className="mt-10 font-bold text-slate-400 hover:text-slate-600">VOLTAR</button>
+           <button onClick={() => setShowMap(false)} className="mt-10 font-bold text-slate-400 hover:text-indigo-600 transition-colors">VOLTAR</button>
         </div>
       )}
 
@@ -510,8 +592,57 @@ const App: React.FC = () => {
            <StatsBar label="Saúde" value={gameState.stats.health} icon="💉" color="bg-green-400" />
         </div>
 
-        {/* Level & Age Persistant Bar */}
-        <div className="mx-4 mb-4 bg-white/80 backdrop-blur-xl rounded-2xl p-3 border border-white/50 shadow-sm flex flex-col gap-1">
+        {/* Interaction Area (Habitat) */}
+        <div id="pet-area" className="flex-1 flex flex-col items-center justify-center relative cursor-pointer overflow-visible" onMouseDown={handlePetting}>
+          <div className={`habitat z-0 transition-all duration-700 ${currentEnv.secondary}`}>
+            {renderEnvironmentDetails()}
+          </div>
+
+          {/* Message Bubble - Right Aligned & Compact */}
+          <div className="absolute top-4 right-4 z-40 bg-white/95 backdrop-blur shadow-lg rounded-2xl p-3 text-center max-w-[140px] font-bold text-slate-800 text-[10px] animate-in slide-in-from-right-4 duration-300">
+            {gameState.stage === 'DEAD' ? "TINGO VIROU UMA ESTRELA 🌟" : message}
+            <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-3 h-3 bg-white/95 rotate-45 shadow-sm"></div>
+          </div>
+          
+          <div className="z-10 w-full flex justify-center">
+            <PenguinCharacter 
+              stage={gameState.stage}
+              isSleeping={gameState.isSleeping}
+              isEating={isInteracting.feeding}
+              isPlaying={isInteracting.playingBall || isInteracting.playingCar || isInteracting.playingPlush}
+              isBathing={isInteracting.bathing}
+              isPetting={isInteracting.petting}
+              age={gameState.stats.age}
+              accessories={{hat: null, glasses: null, clothing: null}}
+              isHoveredByItem={!!draggedItem}
+            />
+          </div>
+
+          {/* Reset Button Overlay */}
+          {gameState.stage === 'DEAD' && (
+            <button 
+              onClick={resetGame}
+              className="absolute top-2/3 left-1/2 -translate-x-1/2 z-[60] bg-indigo-500 hover:bg-indigo-600 active:scale-95 text-white font-bold px-8 py-3 rounded-2xl shadow-[0_8px_20px_rgba(99,102,241,0.4)] transition-all animate-pulse flex items-center gap-2"
+            >
+              <span>✨</span> RECOMEÇAR JORNADA
+            </button>
+          )}
+
+          {/* Visual Toy Effects */}
+          {isInteracting.playingBall && <div className="absolute top-1/2 right-10 text-5xl animate-bounce z-30">⚽</div>}
+          {isInteracting.playingCar && (
+            <div className="absolute bottom-40 w-full flex justify-center overflow-hidden z-30">
+               <div className="text-5xl animate-[float-cloud_2s_linear_infinite] whitespace-nowrap">🏎️ 💨💨</div>
+            </div>
+          )}
+          {isInteracting.playingPlush && <div className="absolute top-1/2 right-1/2 translate-x-16 -translate-y-8 text-5xl animate-bounce z-30">🧸</div>}
+          {isInteracting.feeding && <div className="absolute top-1/2 left-10 text-5xl animate-bounce z-30">🐟</div>}
+          {gameState.poopCount > 0 && <div className="absolute bottom-36 right-12 text-4xl animate-bounce z-20 filter drop-shadow-md">💩</div>}
+          {gameState.isSick && <div className="absolute top-1/2 left-12 text-4xl animate-pulse z-20 filter drop-shadow-md">🤒</div>}
+        </div>
+
+        {/* Level & Age Bar - POSITIONED BELOW THE HABITAT */}
+        <div className="mx-4 mt-4 mb-4 bg-white/80 backdrop-blur-xl rounded-2xl p-3 border border-white/50 shadow-sm flex flex-col gap-1 z-30">
           <div className="flex justify-between items-center px-1">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">NÍVEL {currentLevel}</span>
             <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">{ageYears} ANOS</span>
@@ -523,77 +654,16 @@ const App: React.FC = () => {
             />
           </div>
         </div>
-
-        {/* Message Bubble */}
-        <div className="z-20 bg-white/95 backdrop-blur shadow-lg rounded-2xl p-4 text-center mx-4 mb-4 font-bold text-slate-800 relative transition-all duration-300">
-          {gameState.stage === 'DEAD' ? "TINGO VIROU UMA ESTRELA 🌟" : message}
-          <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white/95 rotate-45 shadow-sm"></div>
-        </div>
-
-        {/* Interaction Area */}
-        <div id="pet-area" className="flex-1 flex flex-col items-center justify-center relative cursor-pointer overflow-visible" onMouseDown={handlePetting}>
-          <div className={`habitat z-0 transition-colors duration-1000 ${currentEnv.secondary}`}>
-            {renderEnvironmentDetails()}
-          </div>
-          
-          <div className="z-10 w-full flex justify-center">
-            <PenguinCharacter 
-              stage={gameState.stage}
-              isSleeping={gameState.isSleeping}
-              isEating={isInteracting.feeding}
-              isPlaying={isInteracting.playingBall || isInteracting.playingCar || isInteracting.playingPlush}
-              isBathing={isInteracting.bathing}
-              isPetting={isInteracting.petting || isInteracting.playingPlush}
-              age={gameState.stats.age}
-              accessories={{hat: null, glasses: null, clothing: null}}
-              isHoveredByItem={!!draggedItem}
-            />
-          </div>
-
-          {/* Reset Button Overlay when dead */}
-          {gameState.stage === 'DEAD' && (
-            <button 
-              onClick={resetGame}
-              className="absolute top-2/3 left-1/2 -translate-x-1/2 z-[60] bg-indigo-500 hover:bg-indigo-600 active:scale-95 text-white font-bold px-8 py-3 rounded-2xl shadow-[0_8px_20px_rgba(99,102,241,0.4)] transition-all animate-pulse flex items-center gap-2"
-            >
-              <span>✨</span> RECOMEÇAR JORNADA
-            </button>
-          )}
-
-          {/* Visual Extras - Toys Animation */}
-          {isInteracting.playingBall && (
-            <div className="absolute top-1/2 right-10 text-5xl animate-bounce z-30">⚽</div>
-          )}
-          {isInteracting.playingCar && (
-            <div className="absolute bottom-40 w-full flex justify-center overflow-hidden z-30">
-               <div className="text-5xl animate-[float-cloud_2s_linear_infinite] whitespace-nowrap">🏎️ 💨💨</div>
-            </div>
-          )}
-          {isInteracting.playingPlush && (
-            <div className="absolute top-1/2 right-1/2 translate-x-16 -translate-y-8 text-5xl animate-bounce z-30">🧸</div>
-          )}
-          {isInteracting.feeding && (
-            <div className="absolute top-1/2 left-10 text-5xl animate-bounce z-30">🐟</div>
-          )}
-
-          {/* Visual Status Extras */}
-          {gameState.poopCount > 0 && (
-            <div className="absolute bottom-36 right-12 text-4xl animate-bounce z-20 filter drop-shadow-md">💩</div>
-          )}
-          {gameState.isSick && (
-            <div className="absolute top-1/2 left-12 text-4xl animate-pulse z-20 filter drop-shadow-md">🤒</div>
-          )}
-        </div>
       </div>
 
-      {/* Navigation / Actions Dock */}
+      {/* Action Dock */}
       <div className="action-dock !grid-cols-3 !gap-3 !p-4 !pb-8 !overflow-y-auto !max-h-[300px]">
          {MENU_ACTIONS.map(action => (
            <div 
              key={action.id}
              onMouseDown={(e) => onDragStart(e, action.id)}
              onClick={() => handleAction(action.id)}
-             className={`action-btn !rounded-xl ${gameState.stage === 'DEAD' && action.id !== 'STATS' ? 'opacity-20 cursor-not-allowed grayscale' : ''} ${draggedItem === action.id ? 'grabbing-item scale-110 border-blue-400' : ''}`}
+             className={`action-btn !rounded-xl ${gameState.stage === 'DEAD' && action.id !== 'STATS' ? 'opacity-20 cursor-not-allowed grayscale' : ''} ${draggedItem === action.id ? 'grabbing-item scale-110 border-indigo-400 shadow-lg' : ''}`}
            >
              <span className="action-icon !text-xl !mb-1">{action.icon}</span>
              <span className="action-label !text-[9px]">{action.label}</span>

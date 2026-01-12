@@ -3,6 +3,8 @@ export type GrowthStage = 'EGG' | 'BABY' | 'CHILD' | 'ADULT' | 'SENIOR' | 'DEAD'
 
 export type EnvironmentType = 'HOME' | 'LIBRARY' | 'SCHOOL' | 'PARK';
 
+export type ActionScenario = 'KITCHEN' | 'BATHROOM' | 'BEDROOM' | 'PLAYROOM' | 'CLINIC' | 'LIBRARY' | null;
+
 export interface PetStats {
   hunger: number;
   happiness: number;
